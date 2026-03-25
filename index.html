@@ -232,6 +232,14 @@ input[type=range]::-webkit-slider-thumb {
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn" onclick="newGame()">New Game</button>
         <button class="btn dim" onclick="undoMove()">Undo Move</button>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="font-size:.67rem;color:var(--muted);letter-spacing:.1em">AI Personality</div>
+          <select id="ai-personality" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px 8px;font-family:'Source Code Pro',monospace;font-size:.7rem;cursor:pointer">
+            <option value="aggressor">⚔ The Aggressor</option>
+            <option value="defender">🛡 The Defender</option>
+            <option value="gambler">🎲 The Gambler</option>
+          </select>
+        </div>
         <div class="sld-wrap">
           <div class="sld-lbl"><span>AI Depth</span><span id="dep-val">3</span></div>
           <input type="range" id="depth" min="1" max="5" value="3"
@@ -376,6 +384,77 @@ PST[BK]=PST_RAW.K.map((_,i)=>PST_RAW.K[mir(i)]);
 // ── Game state ─────────────────────────────────────────────────────────
 let gBoard,gTurn,gCR,gEP,gOver,gSel,gLeg,gLast,gSnaps,gHist,gCapW,gCapB,gAI;
 let isAnimating=false; // Feature 1: block clicks during animation
+
+// ── Feature 2: Opening books per personality (UCI format) ──────────────
+const OPENING_BOOKS = {
+  aggressor: [
+    ['e2e4','e7e5','g1f3','b8c6','f1c4'],  // Italian Game
+    ['e2e4','c7c5','g1f3','d7d6','d2d4'],  // Open Sicilian
+    ['e2e4','e7e6','d2d4','d7d5','e4e5'],  // French Advance
+  ],
+  defender: [
+    ['d2d4','d7d5','c2c4','e7e6','g1f3'],  // Queen's Gambit
+    ['d2d4','g8f6','c2c4','e7e6','g2g3'],  // Catalan
+    ['c2c4','e7e5','g2g3','g8f6','f1g2'],  // English Opening
+  ],
+  gambler: [
+    ['e2e4','e7e5','f2f4'],                // King's Gambit
+    ['e2e4','e7e5','g1f3','g8f6'],         // Petroff (active)
+    ['d2d4','d7d5','c2c4','d5c4','e2e4'],  // QGA
+  ]
+};
+
+// Opening book state — reset on newGame, persists per game
+let currentOpeningLine = null;
+let openingMoveIndex = 0;
+
+// Helper: pick a random element from an array
+function randomChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+// Parse UCI string "e2e4" into a move object matched against legalOf()
+function uciToMove(uci, b, ep, cr, color) {
+  const FILES_MAP = {a:0,b:1,c:2,d:3,e:4,f:5,g:6,h:7};
+  const fr = SQ(8 - parseInt(uci[1]), FILES_MAP[uci[0]]);
+  const to = SQ(8 - parseInt(uci[3]), FILES_MAP[uci[2]]);
+  return legalOf(b, color, ep, cr).find(m => m.fr===fr && m.to===to) || null;
+}
+
+// ── Feature 2: Personality evaluation bias functions ───────────────────
+const PERSONALITY_BIAS = {
+  // Aggressor: bonus for black pieces close to white king
+  aggressor: (b) => {
+    let score = 0;
+    const ek = kingOf(b, WHITE);
+    if(ek < 0) return 0;
+    const ekr = R(ek), ekf = F(ek);
+    for(let i=0;i<64;i++){
+      if(isB(b[i]) && b[i]!==BK){
+        const dist = Math.max(Math.abs(R(i)-ekr), Math.abs(F(i)-ekf));
+        score += Math.max(0, (4-dist)) * 8;
+      }
+    }
+    return score;
+  },
+  // Defender: bonus for connected black pawns
+  defender: (b) => {
+    let score = 0;
+    for(let i=0;i<64;i++){
+      if(b[i]===BP){
+        if(F(i)>0 && b[i-1]===BP) score+=15;
+        if(F(i)<7 && b[i+1]===BP) score+=15;
+      }
+    }
+    return score;
+  },
+  // Gambler: reward advanced black pawns + slight randomness
+  gambler: (b) => {
+    let score = 0;
+    for(let i=0;i<64;i++){
+      if(b[i]===BP) score += (R(i)-1) * 12;
+    }
+    return score + (Math.random() * 20 - 10);
+  }
+};
 
 // ── Attack detection ───────────────────────────────────────────────────
 function attacked(b,s,byC){
@@ -597,7 +676,10 @@ function evaluate(b,color){
     const v=MAT[p]+(PST[p]?PST[p][i]:0);
     sc+=isW(p)?v:-v;
   }
-  return color===WHITE?sc:-sc;
+  // Feature 2: add personality bias (from Black's perspective)
+  const personality = document.getElementById('ai-personality')?.value || 'aggressor';
+  const bias = PERSONALITY_BIAS[personality] ? PERSONALITY_BIAS[personality](b) : 0;
+  return color===WHITE ? sc - bias : -sc + bias;
 }
 
 function quiesce(b,c,ep,cr,alpha,beta,d){
@@ -767,10 +849,21 @@ function handleClick(s){
 
 function triggerAI(){
   gAI=true;
+  // Feature 2: show personality name while thinking
+  const personality = document.getElementById('ai-personality')?.value || 'aggressor';
+  const pLabels = {aggressor:'⚔ Aggressor thinking…', defender:'🛡 Defender thinking…', gambler:'🎲 Gambler thinking…'};
+  document.getElementById('thinking').textContent = pLabels[personality] || 'AI THINKING…';
   document.getElementById('thinking').style.display='block';
   setTimeout(()=>{
     const d=parseInt(document.getElementById('depth').value,10);
-    const m=bestAI(gBoard,BLACK,gEP,gCR,d);
+    let m = null;
+    // Feature 2: try opening book move first
+    if(currentOpeningLine && openingMoveIndex < currentOpeningLine.length){
+      const bookMove = uciToMove(currentOpeningLine[openingMoveIndex], gBoard, gEP, gCR, BLACK);
+      if(bookMove){ m = bookMove; openingMoveIndex++; }
+      else { currentOpeningLine = null; } // deviated — fall through to minimax
+    }
+    if(!m) m = bestAI(gBoard,BLACK,gEP,gCR,d);
     document.getElementById('thinking').style.display='none';
     if(m){
       gSnaps.push(snapShot());
@@ -799,6 +892,10 @@ function newGame(){
   gTurn=WHITE;gCR={wK:true,wQ:true,bK:true,bQ:true};
   gEP=-1;gOver=false;gSel=-1;gLeg=[];gLast=null;
   gSnaps=[];gHist=[];gCapW=[];gCapB=[];gAI=false;isAnimating=false;
+  // Feature 2: pick a fresh opening line for the selected personality
+  const personality = document.getElementById('ai-personality')?.value || 'aggressor';
+  currentOpeningLine = randomChoice(OPENING_BOOKS[personality]);
+  openingMoveIndex = 0;
   document.getElementById('thinking').style.display='none';
   document.getElementById('eval-bar').textContent='Eval: 0.0';
   document.getElementById('status-txt').textContent='Game in progress';
