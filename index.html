@@ -116,7 +116,9 @@ h1 {
   background:transparent; pointer-events:none; z-index:2;
 }
 
-.piece { position:relative; z-index:1; text-shadow:1px 1px 3px rgba(0,0,0,.45); pointer-events:none; }
+.piece { position:relative; z-index:1; pointer-events:none; }
+.piece.white { color:#f5f0e8; text-shadow:0 0 2px #000, 1px 1px 0 #333, -1px -1px 0 #333, 1px -1px 0 #333, -1px 1px 0 #333; }
+.piece.black { color:#1a1a1a; text-shadow:0 0 2px #fff, 1px 1px 0 #888, -1px -1px 0 #888, 1px -1px 0 #888, -1px 1px 0 #888; }
 
 .pbox {
   background:var(--panel); border:1px solid var(--border);
@@ -959,6 +961,14 @@ function animateMove(fromSq, toSq, pieceGlyph, callback) {
   const ap = document.getElementById('anim-piece');
 
   ap.textContent = pieceGlyph;
+  const wPieces = new Set([GLYPH[WP],GLYPH[WN],GLYPH[WB],GLYPH[WR],GLYPH[WQ],GLYPH[WK]]);
+  if(wPieces.has(pieceGlyph)){
+    ap.style.color='#f5f0e8';
+    ap.style.textShadow='0 0 2px #000, 1px 1px 0 #333, -1px -1px 0 #333';
+  } else {
+    ap.style.color='#1a1a1a';
+    ap.style.textShadow='0 0 2px #fff, 1px 1px 0 #888, -1px -1px 0 #888';
+  }
   ap.style.transition = 'none';
   ap.style.transform  = 'translate(0,0)';
   ap.style.left = fr.left + 'px';
@@ -1111,7 +1121,7 @@ function render(){
     const p=gBoard[s];
     if(p){
       const sp=document.createElement('span');
-      sp.className='piece';
+      sp.className='piece ' + (isW(p) ? 'white' : 'black');
       sp.textContent=GLYPH[p];
       d.appendChild(sp);
     }
