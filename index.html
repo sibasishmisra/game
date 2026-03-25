@@ -209,6 +209,30 @@ input[type=range]::-webkit-slider-thumb {
   0%{transform:scale(0)} 60%{transform:scale(1.3)} 100%{transform:scale(1)}
 }
 .cap-pop { animation:capPop 150ms ease forwards; }
+
+/* ── Quote Toast ── */
+#quote-toast {
+  position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:linear-gradient(135deg,rgba(34,28,20,.97),rgba(26,22,14,.97));
+  border:1px solid var(--accent); border-radius:12px;
+  padding:14px 22px; max-width:420px; width:90%;
+  box-shadow:0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(200,169,110,.15);
+  z-index:300; pointer-events:none;
+  opacity:0; transition:opacity 350ms ease, transform 350ms ease;
+  text-align:center;
+}
+#quote-toast.show {
+  opacity:1; transform:translateX(-50%) translateY(0);
+}
+#quote-icon { font-size:1.4rem; margin-bottom:4px; display:block; }
+#quote-label {
+  font-size:.58rem; color:var(--accent); letter-spacing:.22em;
+  text-transform:uppercase; margin-bottom:6px; display:block;
+}
+#quote-text {
+  font-family:'Playfair Display',serif; font-size:.82rem;
+  color:var(--text); line-height:1.55; font-style:italic;
+}
 </style>
 </head>
 <body>
@@ -282,6 +306,13 @@ input[type=range]::-webkit-slider-thumb {
 
 <!-- Feature 1: floating animation piece -->
 <div id="anim-piece"></div>
+
+<!-- Quote toast -->
+<div id="quote-toast">
+  <span id="quote-icon">♟</span>
+  <span id="quote-label">Move</span>
+  <div id="quote-text"></div>
+</div>
 
 <div id="overlay">
   <div id="mbox">
@@ -455,6 +486,141 @@ const PERSONALITY_BIAS = {
     return score + (Math.random() * 20 - 10);
   }
 };
+
+// ── Quote system: contextual motivational quotes per move type ─────────
+const QUOTES = {
+  check: {
+    icon:'⚡', label:'Check!',
+    lines:[
+      "Pressure reveals character — keep it on.",
+      "The king is cornered. Don't let up.",
+      "A threat made is a threat felt. Push forward.",
+      "You've rattled the throne. Now shake it loose.",
+      "Check is the knock on the door. Checkmate is walking in."
+    ]
+  },
+  capture_queen: {
+    icon:'👑', label:'Queen Taken!',
+    lines:[
+      "The queen falls. The game shifts. Seize the moment.",
+      "Their most powerful piece is gone. The board is yours to command.",
+      "A queen for a queen — or a queen for nothing. Either way, brilliant.",
+      "Removing the queen is removing the heart of their army.",
+      "That's not luck. That's vision."
+    ]
+  },
+  capture: {
+    icon:'⚔️', label:'Capture!',
+    lines:[
+      "Every piece taken is a step closer to victory.",
+      "Material advantage is quiet confidence.",
+      "You didn't just take a piece — you took their options.",
+      "Trade wisely. Every exchange tells a story.",
+      "The board gets cleaner. Your path gets clearer."
+    ]
+  },
+  castle: {
+    icon:'🏰', label:'Castled!',
+    lines:[
+      "Safety first, then the attack. Smart.",
+      "The king is tucked away. Now unleash the rooks.",
+      "Castling is not retreat — it's preparation.",
+      "A safe king is a winning king.",
+      "You've built your fortress. Now lay siege to theirs."
+    ]
+  },
+  promotion: {
+    icon:'🌟', label:'Promotion!',
+    lines:[
+      "A pawn that believed it could become a queen — and did.",
+      "From the back rank to royalty. That's the chess dream.",
+      "Promotion is the reward for patience and persistence.",
+      "Your pawn walked the whole board. It earned this.",
+      "The smallest piece just became the most powerful. Incredible."
+    ]
+  },
+  en_passant: {
+    icon:'🌀', label:'En Passant!',
+    lines:[
+      "En passant — the move most players forget exists.",
+      "You saw the ghost square. That's mastery.",
+      "A rare move, perfectly timed. Respect.",
+      "En passant: chess's most elegant surprise.",
+      "Only the sharpest players remember this rule. You did."
+    ]
+  },
+  opening: {
+    icon:'🌅', label:'Opening',
+    lines:[
+      "Every great game starts with a single move.",
+      "The opening sets the tone. Make it count.",
+      "Control the center. Control the game.",
+      "Development is everything in the opening.",
+      "The first moves are a conversation. Speak boldly."
+    ]
+  },
+  ai_check: {
+    icon:'🔥', label:'Under Pressure',
+    lines:[
+      "Your king is in check — but every great player has been here.",
+      "Pressure is a privilege. Find the escape.",
+      "The best moves are found under pressure.",
+      "Stay calm. The answer is on the board.",
+      "Checks can be survived. Focus."
+    ]
+  },
+  ai_capture: {
+    icon:'🛡️', label:'Defend!',
+    lines:[
+      "They took a piece. Take it back — or take something better.",
+      "Defense is just offense waiting for its moment.",
+      "Every loss on the board is a lesson in disguise.",
+      "Resilience is the most underrated chess skill.",
+      "They made their move. Now make yours count."
+    ]
+  },
+  quiet: {
+    icon:'♟', label:'Developing',
+    lines:[
+      "Quiet moves build loud positions.",
+      "Patience is a weapon. Use it.",
+      "Not every great move announces itself.",
+      "You're building something. Trust the process.",
+      "The best players think three moves ahead. Are you?"
+    ]
+  }
+};
+
+let quoteTimer = null;
+
+// Classify the move and show a fitting quote
+function showMoveQuote(m, boardBefore, movedPiece, wasCapture, capturedPiece, isCheck, byHuman) {
+  let category;
+
+  if(!byHuman && isCheck)         category = 'ai_check';
+  else if(!byHuman && wasCapture) category = 'ai_capture';
+  else if(m.castle)               category = 'castle';
+  else if(m.ep)                   category = 'en_passant';
+  else if(m.promo)                category = 'promotion';
+  else if(isCheck)                category = 'check';
+  else if(wasCapture && (capturedPiece===WQ||capturedPiece===BQ)) category = 'capture_queen';
+  else if(wasCapture)             category = 'capture';
+  else if(gHist.length <= 6)      category = 'opening';
+  else                            category = 'quiet';
+
+  const bank = QUOTES[category];
+  const line = bank.lines[Math.floor(Math.random() * bank.lines.length)];
+
+  document.getElementById('quote-icon').textContent = bank.icon;
+  document.getElementById('quote-label').textContent = bank.label;
+  document.getElementById('quote-text').textContent = line;
+
+  const toast = document.getElementById('quote-toast');
+  toast.classList.add('show');
+
+  if(quoteTimer) clearTimeout(quoteTimer);
+  quoteTimer = setTimeout(() => toast.classList.remove('show'), 3800);
+}
 
 // ── Attack detection ───────────────────────────────────────────────────
 function attacked(b,s,byC){
@@ -739,7 +905,7 @@ function restoreSnap(s){
 }
 
 // ── Execute move ───────────────────────────────────────────────────────
-function doMove(m){
+function doMove(m, byHuman=false){
   const piece=gBoard[m.fr];
   const capt=m.ep?(isW(piece)?BP:WP):gBoard[m.to];
   if(capt) (isW(piece)?gCapW:gCapB).push(capt);
@@ -763,6 +929,9 @@ function doMove(m){
   else if(nChk) suf='+';
   gHist.push(notation+suf);
   gTurn=next;
+
+  // Show contextual quote after move is committed
+  showMoveQuote(m, gBoard, piece, !!capt, capt, nChk, byHuman);
 }
 
 // ── Check game end ─────────────────────────────────────────────────────
@@ -832,7 +1001,7 @@ function handleClick(s){
       render(); // hide selection/dots immediately, piece still visible on board
       isAnimating=true;
       animateMove(m.fr, m.to, glyph, ()=>{
-        doMove(m);
+        doMove(m, true);
         render();updateUI();checkEnd();
         if(!gOver) triggerAI();
       });
@@ -870,7 +1039,7 @@ function triggerAI(){
       const glyph=GLYPH[gBoard[m.fr]];
       isAnimating=true;
       animateMove(m.fr, m.to, glyph, ()=>{
-        doMove(m);
+        doMove(m, false);
         gAI=false;
         render();updateUI();checkEnd();
       });
@@ -900,6 +1069,8 @@ function newGame(){
   document.getElementById('eval-bar').textContent='Eval: 0.0';
   document.getElementById('status-txt').textContent='Game in progress';
   document.getElementById('overlay').classList.remove('show');
+  document.getElementById('quote-toast').classList.remove('show');
+  if(quoteTimer){ clearTimeout(quoteTimer); quoteTimer=null; }
   render();updateUI();
 }
 
