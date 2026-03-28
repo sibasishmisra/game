@@ -10,15 +10,15 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --light-sq: #F0D9B5;
-  --dark-sq:  #B58863;
+  --light-sq: #f9e4ef;
+  --dark-sq:  #c47fa3;
   --sq-size:  72px;
-  --bg:       #1a1a1a;
-  --panel:    #222222;
-  --border:   #333333;
-  --text:     #e8e0d0;
-  --muted:    #888880;
-  --accent:   #c8a96e;
+  --bg:       #1a0f14;
+  --panel:    #261520;
+  --border:   #3d2035;
+  --text:     #f5e6f0;
+  --muted:    #b08898;
+  --accent:   #e87db8;
 }
 
 body {
@@ -38,7 +38,7 @@ h1 {
   letter-spacing: 0.12em;
   color: var(--accent);
   margin-bottom: 4px;
-  text-shadow: 0 2px 12px rgba(200,169,110,0.25);
+  text-shadow: 0 2px 12px rgba(232,125,184,0.35);
 }
 
 .subtitle {
@@ -215,10 +215,10 @@ input[type=range]::-webkit-slider-thumb {
 /* ── Quote Toast ── */
 #quote-toast {
   position:fixed; bottom:32px; left:50%; transform:translateX(-50%) translateY(20px);
-  background:linear-gradient(135deg,rgba(34,28,20,.97),rgba(26,22,14,.97));
+  background:linear-gradient(135deg,rgba(38,21,32,.97),rgba(26,15,20,.97));
   border:1px solid var(--accent); border-radius:12px;
   padding:14px 22px; max-width:420px; width:90%;
-  box-shadow:0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(200,169,110,.15);
+  box-shadow:0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(232,125,184,.15);
   z-index:300; pointer-events:none;
   opacity:0; transition:opacity 350ms ease, transform 350ms ease;
   text-align:center;
